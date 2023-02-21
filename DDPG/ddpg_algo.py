@@ -18,6 +18,7 @@ import time
 import matplotlib.pyplot as plt
 from state_normalization import StateNormalization
 
+# 超参数
 #####################  hyper parameters  ####################
 MAX_EPISODES = 1000
 # MAX_EPISODES = 50000
