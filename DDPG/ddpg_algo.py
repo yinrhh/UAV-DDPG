@@ -20,11 +20,14 @@ from state_normalization import StateNormalization
 
 # 超参数
 #####################  hyper parameters  ####################
+# 仅设置回合数，没有设置steps。没有done的标准？
 MAX_EPISODES = 1000
 # MAX_EPISODES = 50000
 
-LR_A = 0.001  # learning rate for actor
-LR_C = 0.002  # learning rate for critic
+LR_A = 0.000001  # learning rate for actor
+LR_C = 0.000002  # learning rate for critic
+# LR_A = 0.001  # learning rate for actor
+# LR_C = 0.002  # learning rate for critic
 # LR_A = 0.1  # learning rate for actor
 # LR_C = 0.2  # learning rate for critic
 GAMMA = 0.001  # optimal reward discount
@@ -39,11 +42,13 @@ OUTPUT_GRAPH = False
 
 # Runs policy for X episodes and returns average reward
 # A fixed seed is used for the eval environment
+# 训练完成后进行评价,训练的函数不用再调learn方法.没有数据集的概念
 def eval_policy(ddpg, eval_episodes=10):
     # eval_env = gym.make(env_name)
     eval_env = UAVEnv()
     # eval_env.seed(seed + 100)
     avg_reward = 0.
+    # 10个回合?
     for i in range(eval_episodes):
         state = eval_env.reset()
         # while not done:
@@ -126,9 +131,11 @@ class DDPG(object):
         index = self.pointer % MEMORY_CAPACITY  # replace the old memory with new memory
         self.memory[index, :] = transition
         self.pointer += 1
+        # 没有设置存储器满的标签
 
     def _build_a(self, s, scope, trainable):
         with tf.variable_scope(scope):
+            # 4层网络
             net = tf.layers.dense(s, 400, activation=tf.nn.relu6, name='l1', trainable=trainable)
             net = tf.layers.dense(net, 300, activation=tf.nn.relu6, name='l2', trainable=trainable)
             net = tf.layers.dense(net, 10, activation=tf.nn.relu, name='l3', trainable=trainable)
@@ -146,13 +153,18 @@ class DDPG(object):
             net = tf.layers.dense(net, 10, activation=tf.nn.relu, name='l3', trainable=trainable)
             return tf.layers.dense(net, 1, trainable=trainable)  # Q(s,a)
 
+    # 没有save和restore函数：用于保存训练好的参数以及使用训练好的参数进行评价。
+
 
 ###############################  training  ####################################
+# 随机数种子，以保证每次训练环境一样
 np.random.seed(1)
 tf.set_random_seed(1)
 
 env = UAVEnv()
+# step设置，因此不需要done标准
 MAX_EP_STEPS = env.slot_num
+# MAX_EP_STEPS = 38
 s_dim = env.state_dim
 a_dim = env.action_dim
 a_bound = env.action_bound  # [-1,1]
@@ -162,40 +174,63 @@ ddpg = DDPG(a_dim, s_dim, a_bound)
 # var = 1  # control exploration
 var = 0.01  # control exploration
 t1 = time.time()
+# 回合奖励list
 ep_reward_list = []
+ep_time_list = []
+# 定义一个normalization对象:用于归一化参数
 s_normal = StateNormalization()
 
-for i in range(MAX_EPISODES):
-    s = env.reset()
-    ep_reward = 0
+steps = []
 
+for i in range(MAX_EPISODES):
+    # 回合开始重置环境
+    s = env.reset()
+    # 回合奖励
+    ep_reward = 0
+    ep_delay = 0
+
+    # 循环参数step
     j = 0
     while j < MAX_EP_STEPS:
+        # start = time.time()
+        # 一个step代表一个时间帧
         # Add exploration noise
+        # ddpg获取的action,ddpg在learn时更新参数,传参为环境返回的reward等信息
         a = ddpg.choose_action(s_normal.state_normal(s))
+        # clip函数的使用，机械臂中防止超出范围
+        # todo：var变量的作用:类似于更新频率dt?
         a = np.clip(np.random.normal(a, var), *a_bound)  # 高斯噪声add randomness to action selection for exploration
-        s_, r, is_terminal, step_redo, offloading_ratio_change, reset_dist = env.step(a)
+        # 关键部分：环境的反馈（6个值，多了3个,均为布尔值,分别代表3个异常分支）
+        s_, r, is_terminal, step_redo, offloading_ratio_change, reset_dist, delay = env.step(a)
+        # 根据后三个调整a[]参数：action
         if step_redo:
             continue
         if reset_dist:
             a[2] = -1
         if offloading_ratio_change:
             a[3] = -1
+        # 依然只存储4个值
         ddpg.store_transition(s_normal.state_normal(s), a, r, s_normal.state_normal(s_))  # 训练奖励缩小10倍
 
+        # 超出容量进行学习，这一部分可以定义一个标志位memory_full进行判断
         if ddpg.pointer > MEMORY_CAPACITY:
             # var = max([var * 0.9997, VAR_MIN])  # decay the action randomness
             ddpg.learn()
         s = s_
         ep_reward += r
+        ep_delay += delay
         if j == MAX_EP_STEPS - 1 or is_terminal:
-            print('Episode:', i, ' Steps: %2d' % j, ' Reward: %7.2f' % ep_reward, 'Explore: %.3f' % var)
+            # ep_reward是一回合结果
+            print('Episode:', i, ' Steps: %2d' % j, ' Reward: %7.2f' % ep_reward, ' Explore: %.3f' % var, ' Done:', is_terminal, ' Delay:', ep_delay)
             ep_reward_list = np.append(ep_reward_list, ep_reward)
+            ep_time_list = np.append(ep_time_list, ep_delay)
             # file_name = 'output_ddpg_' + str(self.bandwidth_nums) + 'MHz.txt'
+            # 输出文件
             file_name = 'output.txt'
             with open(file_name, 'a') as file_obj:
                 file_obj.write("\n======== This episode is done ========")  # 本episode结束
             break
+        # 用于step循环
         j = j + 1
 
     # # Evaluate episode
@@ -203,7 +238,10 @@ for i in range(MAX_EPISODES):
     #     eval_policy(ddpg, env)
 
 print('Running time: ', time.time() - t1)
-plt.plot(ep_reward_list)
+# plt.plot(ep_reward_list)
+# plt.xlabel("Episode")
+# plt.ylabel("Reward")
+plt.plot(ep_time_list)
 plt.xlabel("Episode")
-plt.ylabel("Reward")
+plt.ylabel("time")
 plt.show()

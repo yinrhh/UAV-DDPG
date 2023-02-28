@@ -6,6 +6,7 @@ import numpy as np
 
 class UAVEnv(object):
     height = ground_length = ground_width = 100  # 场地长宽均为100m，UAV飞行高度也是
+    # 类似于goal
     sum_task_size = 100 * 1048576  # 总计算任务60 Mbits --> 60 80 100 120 140
     loc_uav = [50, 50]
     bandwidth_nums = 1
@@ -31,8 +32,8 @@ class UAVEnv(object):
 
     #################### ues ####################
     M = 4  # UE数量
-    block_flag_list = np.random.randint(0, 2, M)  # 4个ue，ue的遮挡情况
-    loc_ue_list = np.random.randint(0, 101, size=[M, 2])  # 位置信息:x在0-100随机
+    block_flag_list = np.random.randint(0, 2, M)  # 4个ue，ue的遮挡情况,M行.
+    loc_ue_list = np.random.randint(0, 101, size=[M, 2])  # 位置信息:x在0-100随机.M行2列.x y.
     # task_list = np.random.randint(1572864, 2097153, M)      # 随机计算任务1.5~2Mbits ->对应总任务大小60
     task_list = np.random.randint(2097153, 2621440, M)  # 随机计算任务2~2.5Mbits -> 80
     # ue位置转移概率
@@ -42,8 +43,10 @@ class UAVEnv(object):
     #                              [.6, .1, .1, .1, .1],
     #                              [.6, .1, .1, .1, .1]])
 
+    # 环境最重要的3个参数
     action_bound = [-1, 1]  # 对应tahn激活函数
     action_dim = 4  # 第一位表示服务的ue id;中间两位表示飞行角度和距离；后1位表示目前服务于UE的卸载率
+    # 智能体代表无人机
     state_dim = 4 + M * 4  # uav battery remain, uav loc, remaining sum task size, all ue loc, all ue task size, all ue block_flag
 
     def __init__(self):
@@ -53,16 +56,20 @@ class UAVEnv(object):
         self.start_state = np.append(self.start_state, np.ravel(self.loc_ue_list))
         self.start_state = np.append(self.start_state, self.task_list)
         self.start_state = np.append(self.start_state, self.block_flag_list)
+        # 状态设置为初始状态
         self.state = self.start_state
 
     def reset_env(self):
+        # 供reset方法调用
         self.sum_task_size = 100 * 1048576  # 总计算任务60 Mbits -> 60 80 100 120 140
         self.e_battery_uav = 500000  # uav电池电量: 500kJ
+        # todo:uav中心点?起始出发点.
         self.loc_uav = [50, 50]
         self.loc_ue_list = np.random.randint(0, 101, size=[self.M, 2])  # 位置信息:x在0-100随机
         self.reset_step()
 
     def reset_step(self):
+        # 供reset方法调用
         # self.task_list = np.random.randint(1572864, 2097153, self.M)  # 随机计算任务1.5~2Mbits -> 1.5~2 2~2.5 2.5~3 3~3.5 3.5~4
         # self.task_list = np.random.randint(2097152, 2621441, self.M)  # 随机计算任务1.5~2Mbits -> 1.5~2 2~2.5 2.5~3 3~3.5 3.5~4
         # self.task_list = np.random.randint(2621440, 3145729, self.M)  # 随机计算任务1.5~2Mbits -> 1.5~2 2~2.5 2.5~3 3~3.5 3.5~4
@@ -90,11 +97,16 @@ class UAVEnv(object):
         self.state = np.append(self.state, self.block_flag_list)
         return self.state
 
+    # 关键方法
     def step(self, action):  # 0: 选择服务的ue编号 ; 1: 方向theta; 2: 距离d; 3: offloading ratio
+        # 关键定义reward表达式
         step_redo = False
         is_terminal = False
         offloading_ratio_change = False
+        # 重置距离
         reset_dist = False
+
+        # 处理传参action,action是一个长度为4的数组.action包含了服务器所选择的ue.在choose中选择.
         action = (action + 1) / 2  # 将取值区间位-1~1的action -> 0~1的action。避免原来action_bound为[0,1]时训练actor网络tanh函数一直取边界0
         #################寻找最优的服务对象UE######################
         # 对ddpg进行改进,输出层添加一层用来输出离散动作(实现结果不对)
@@ -102,10 +114,12 @@ class UAVEnv(object):
         # 随机轮询:先生成一个随机数队列, 服务完就剔除UE, 队列为空再次随机生成(逻辑不对)
         # 控制变量映射到各个变量的取值区间
         if action[0] == 1:
+            # todo:ue.id为最后一个?
             ue_id = self.M - 1
         else:
             ue_id = int(self.M * action[0])
 
+        # 编号为ue_id的ue的任务量大小.关于此ue的所有信息.
         theta = action[1] * np.pi * 2  # 角度
         offloading_ratio = action[3]  # ue卸载率
         task_size = self.task_list[ue_id]
@@ -127,12 +141,16 @@ class UAVEnv(object):
         e_server = self.r * self.f_uav ** 3 * t_server  # 在UAV边缘服务器上计算耗能
 
         if self.sum_task_size == 0:  # 计算任务全部完成
+            # 终止条件
             is_terminal = True
             reward = 0
+            delay = .0
         elif self.sum_task_size - self.task_list[ue_id] < 0:  # 最后一步计算任务和ue的计算任务不匹配
             self.task_list = np.ones(self.M) * self.sum_task_size
             reward = 0
             step_redo = True
+            delay = .0
+        # 超出边界
         elif loc_uav_after_fly_x < 0 or loc_uav_after_fly_x > self.ground_width or loc_uav_after_fly_y < 0 or loc_uav_after_fly_y > self.ground_length:  # uav位置不对
             # 如果超出边界，则飞行距离dist置零
             reset_dist = True
@@ -147,31 +165,40 @@ class UAVEnv(object):
             reward = -delay
             self.reset2(delay, loc_uav_after_fly_x, loc_uav_after_fly_y, 0, task_size, ue_id)
             offloading_ratio_change = True
+        # 最终正常计算的分支
         else:  # 电量支持飞行,且计算任务合理,且计算任务能在剩余电量内计算
+            # 一个时隙内的时延
             delay = self.com_delay(self.loc_ue_list[ue_id], np.array([loc_uav_after_fly_x, loc_uav_after_fly_y]),
                                    offloading_ratio, task_size, block_flag)  # 计算delay
             reward = -delay
-            # 更新下一时刻状态
+            # 更新下一时刻状态,更新无人机电量
             self.e_battery_uav = self.e_battery_uav - e_fly - e_server  # uav 剩余电量
+            # 更新无人机位置
             self.loc_uav[0] = loc_uav_after_fly_x  # uav 飞行后的位置
             self.loc_uav[1] = loc_uav_after_fly_y
-            self.reset2(delay, loc_uav_after_fly_x, loc_uav_after_fly_y, offloading_ratio, task_size,
-                                           ue_id)   # 重置ue任务大小，剩余总任务大小，ue位置，并记录到文件
+            # 重置ue任务大小，剩余总任务大小，ue位置，并记录到文件.只重置ue_id的信息.
+            self.reset2(delay, loc_uav_after_fly_x, loc_uav_after_fly_y, offloading_ratio, task_size, ue_id)
 
-        return self._get_obs(), reward, is_terminal, step_redo, offloading_ratio_change, reset_dist
+        return self._get_obs(), reward, is_terminal, step_redo, offloading_ratio_change, reset_dist, delay
 
     # 重置ue任务大小，剩余总任务大小，ue位置，并记录到文件
     def reset2(self, delay, x, y, offloading_ratio, task_size, ue_id):
+        # 扣减ep的任务量
         self.sum_task_size -= self.task_list[ue_id]  # 剩余任务量
+        # 随机化每一帧位置
         for i in range(self.M):  # ue随机移动后的位置
             tmp = np.random.rand(2)
+            # 角度和距离
             theta_ue = tmp[0] * np.pi * 2  # ue 随机移动角度
             dis_ue = tmp[1] * self.delta_t * self.v_ue  # ue 随机移动距离
+            # ue位置
             self.loc_ue_list[i][0] = self.loc_ue_list[i][0] + math.cos(theta_ue) * dis_ue
             self.loc_ue_list[i][1] = self.loc_ue_list[i][1] + math.sin(theta_ue) * dis_ue
+            # clip函数,防止设备位置出界
             self.loc_ue_list[i] = np.clip(self.loc_ue_list[i], 0, self.ground_width)
+        # 每一步都需要随机生成任务和遮挡情况,该仿真条件中step为40,不同step一直在变.随机化每一帧任务
         self.reset_step()  # ue随机计算任务1~2Mbits # 4个ue，ue的遮挡情况
-        # 记录UE花费
+        # 记录UE花费,输出至文件保存
         file_name = 'output.txt'
         # file_name = 'output_ddpg_' + str(self.bandwidth_nums) + 'MHz.txt'
         with open(file_name, 'a') as file_obj:
@@ -180,7 +207,7 @@ class UAVEnv(object):
             file_obj.write("\nUAV hover loc:" + "[" + '{:.2f}'.format(x) + ', ' + '{:.2f}'.format(y) + ']')  # 输出保留两位结果
 
 
-    # 计算花费
+    # 计算花费:时延
     def com_delay(self, loc_ue, loc_uav, offloading_ratio, task_size, block_flag):
         dx = loc_uav[0] - loc_ue[0]
         dy = loc_uav[1] - loc_ue[1]

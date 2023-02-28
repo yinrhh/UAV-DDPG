@@ -5,6 +5,7 @@ from UAV_env import UAVEnv
 class StateNormalization(object):
     def __init__(self):
         env = UAVEnv()
+        # UE数量
         M = env.M
         self.high_state = np.array(
             [5e5, env.ground_length, env.ground_width, 100 * 1048576])
@@ -19,4 +20,5 @@ class StateNormalization(object):
         self.low_state = np.zeros(4 * M + 4)  # uav loc, ue loc, task size, block_flag
 
     def state_normal(self, state):
+        # 长度为 4M * 4的数组.归一化:最大值-最小值
         return state / (self.high_state - self.low_state)
