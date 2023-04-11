@@ -1,5 +1,15 @@
 import numpy as np
 
-sum_task_size = 80
-task_list = np.ones(4) * sum_task_size
-print(task_list)
+list = np.append(1,2)
+list = np.append(list,3)
+list = np.append(list,4)
+
+copy = list.copy()
+print(copy)
+
+copy[3] = 8
+print(copy)
+
+another = list[2:]
+print(list)
+print(another)
