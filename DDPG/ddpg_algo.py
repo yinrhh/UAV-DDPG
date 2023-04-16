@@ -20,15 +20,15 @@ from state_normalization import StateNormalization
 
 # 超参数
 #####################  hyper parameters  ####################
-MAX_EPISODES = 1000
+MAX_EPISODES = 500
 # MAX_EPISODES = 50000
 
-LR_A = 0.000001  # learning rate for actor
-LR_C = 0.000002  # learning rate for critic
+# LR_A = 0.000001  # learning rate for actor
+# LR_C = 0.000002  # learning rate for critic
 # LR_A = 0.001  # learning rate for actor
 # LR_C = 0.002  # learning rate for critic
-# LR_A = 0.1  # learning rate for actor
-# LR_C = 0.2  # learning rate for critic
+LR_A = 0.1  # learning rate for actor
+LR_C = 0.2  # learning rate for critic
 GAMMA = 0.001  # optimal reward discount
 # GAMMA = 0.999  # reward discount
 TAU = 0.01  # soft replacement
@@ -156,8 +156,8 @@ class DDPG(object):
 
 
 ###############################  training  ####################################
-np.random.seed(1)
-tf.set_random_seed(1)
+np.random.seed(2)
+tf.set_random_seed(2)
 
 env = UAVEnv()
 MAX_EP_STEPS = env.slot_num
@@ -167,8 +167,8 @@ a_bound = env.action_bound
 
 ddpg = DDPG(a_dim, s_dim, a_bound)
 
-# var = 1  # control exploration
-var = 0.1  # control exploration
+var = 1  # control exploration
+# var = 0.1  # control exploration
 # var = 0.01  # control exploration
 t1 = time.time()
 # 回合奖励list
@@ -198,7 +198,7 @@ for i in range(MAX_EPISODES):
         # todo：var变量的作用:类似于更新频率dt?
         a = np.clip(np.random.normal(a, var), *a_bound)  # 高斯噪声add randomness to action selection for exploration
         # 关键部分：环境的反馈（6个值，多了3个,均为布尔值,分别代表3个异常分支）
-        s_, r, is_terminal, step_redo, offloading_ratio_change, reset_dist = env.step(a)
+        s_, r, is_terminal, step_redo, offloading_ratio_change, reset_dist = env.step(a,i)
         # 根据后三个调整a[]参数：action
         if step_redo:
             # 重做此步，后续不执行
@@ -207,12 +207,12 @@ for i in range(MAX_EPISODES):
             a[2] = -1
         if offloading_ratio_change:
             a[3] = -1
-        # 依然只存储4个值。前一状态执行动作a，变为下一个状态，获取的回报为r
+        # 依然只存储4个值。前一个状态，执行动作a，变为下一个状态，获取的回报为r
         ddpg.store_transition(s_normal.state_normal(s), a, r, s_normal.state_normal(s_))  # 训练奖励缩小10倍
 
         # 超出容量进行学习，这一部分可以定义一个标志位memory_full进行判断
         if ddpg.pointer > MEMORY_CAPACITY:
-            # var = max([var * 0.9997, VAR_MIN])  # decay the action randomness
+            var = max([var * 0.9997, VAR_MIN])  # decay the action randomness
             ddpg.learn()
         s = s_
         # 累加获取到的reward和delay
