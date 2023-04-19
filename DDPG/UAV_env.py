@@ -83,7 +83,6 @@ class UAVEnv(object):
     def step(self, action, eps):
         # action：前两位表示飞行角度和距离；后M位表示目前服务于UE的卸载率
         # 各项标志位
-        step_redo = False
         is_terminal = False
         offloading_ratio_change = False
         reset_dist = False
@@ -111,6 +110,7 @@ class UAVEnv(object):
         for i in range(self.M):
             task_size[i] = (self.remain_task_list[i] * task_size_ratio[i]) if (self.task_list[i] > 0) else 0
             # 本地计算任务分配量过多，一个时间帧内无法计算完成。加以惩罚并把任务量置0。
+            # todo：任务中断概率
             t_loc_cal = self.com_local_single_time(task_size[i])
             if t_loc_cal > self.tao_time:
                 task_size[i] = 0
@@ -131,14 +131,16 @@ class UAVEnv(object):
 
         if self.is_finished():  # 计算任务全部完成
             is_terminal = True
+            energy = 0
             reward += 1000
         # elif self.time_limited(t_loc_off, t_loc_cal):
         #     # step_redo = True
         #     reward = self.step_punish
         #     self.record_step(0, uav_after_x, uav_after_y, np.zeros(self.M), np.zeros(self.M), t_loc_off, t_loc_cal,
         #                      task_size, eps)
+        # todo：详细考虑energy的计算
         elif uav_after_x < 0 or uav_after_x > self.ground_width or uav_after_y < 0 or uav_after_y > self.ground_length:
-            # 如果超出边界，则飞行距离dist置零。不需要重做此步,UAV选择变化之前的位置。不改变UAV位置。
+            # UAV飞行范围约束：如果超出边界，则飞行距离dist置零。不需要重做此步,UAV选择变化之前的位置。不改变UAV位置。
             reset_dist = True
             energy = self.com_energy(t_loc_off, t_loc_cal)  # 计算energy
             reward += -energy
@@ -146,7 +148,7 @@ class UAVEnv(object):
             self.record_step(energy, self.loc_uav[0], self.loc_uav[1], task_size, task_size, t_loc_off, t_loc_cal,
                              task_size_ratio, eps)
         elif self.e_battery_uav < e_fly or self.e_battery_uav - e_fly < e_uav_total:
-            # UAV电量不能支持计算,属于UAV电量约束条件。此时任务全部在本地计算。
+            # UAV电量约束：UAV电量不能支持计算,属于UAV电量约束条件。此时任务全部在本地计算。
             energy = self.com_energy(t_loc_off, t_loc_cal)  # 计算energy
             reward += -energy
             offloading_ratio_change = True
@@ -162,7 +164,8 @@ class UAVEnv(object):
                              task_size_ratio, eps)
 
         # 环境根据执行的动作输出奖励和状态。delay和reward互为相反数。
-        return self._get_obs(), reward, is_terminal, step_redo, offloading_ratio_change, reset_dist
+        # todo：返回时延信息
+        return self._get_obs(), reward, is_terminal, offloading_ratio_change, reset_dist, energy
 
     def record_step(self, energy, x, y, uav_task_size, local_task_size, t_loc_off, t_loc_cal, task_size_ratio, eps):
         for i in range(self.M):
@@ -186,28 +189,18 @@ class UAVEnv(object):
         t_loc_off = np.zeros(self.M)
         t_loc_cal = np.zeros(self.M)
         for i in range(self.M):
-            ################# 通信模型 ######################
-            dx = loc_uav[0] - loc_ue_list[i][0]
-            dy = loc_uav[1] - loc_ue_list[i][1]
-            dh = self.height
-            dist_uav_ue = np.sqrt(dx * dx + dy * dy + dh * dh)
-            p_noise = self.p_noisy_los
-            g_uav_ue = abs(self.alpha0 / dist_uav_ue ** 2)  # 信道增益
-            trans_rate = self.B * math.log2(1 + self.p_uplink * g_uav_ue / p_noise)  # 上行链路传输速率bps
+            ################# UE卸载任务：传输任务耗时 ######################
+            t_loc_off[i] = self.com_uav_single_time(loc_uav, loc_ue_list[i], uav_task_size[i])
 
-            ################# UE卸载任务 ######################
-            uav_task = uav_task_size[i]  # UE卸载任务大小
-            t_loc_off[i] = uav_task / trans_rate  # 卸载任务耗时
-
-            ################# UE计算任务 ######################
-            local_task = local_task_size[i]
-            t_loc_cal[i] = local_task / (self.f_ue / self.s)  # 本地计算耗时
+            ################# UE计算任务：本地计算耗时 ######################
+            t_loc_cal[i] = self.com_local_single_time(local_task_size[i])
 
             if t_loc_off[i] < 0 or t_loc_cal[i] < 0:
                 raise Exception(print("+++++++++++++++++!! 耗时小于0 !!+++++++++++++++++++++++"))
         return t_loc_off, t_loc_cal
 
     def com_uav_single_time(self, loc_uav, loc_ue, uav_task_size):
+        ################# 通信模型 ######################
         dx = loc_uav[0] - loc_ue[0]
         dy = loc_uav[1] - loc_ue[1]
         dh = self.height

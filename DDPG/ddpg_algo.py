@@ -171,9 +171,11 @@ var = 1  # control exploration
 # var = 0.1  # control exploration
 # var = 0.01  # control exploration
 t1 = time.time()
-# 回合奖励list
+
+# 回合奖励list、回合耗时list、回合耗能list
 ep_reward_list = []
 ep_time_list = []
+ep_energy_list = []
 s_normal = StateNormalization()
 
 steps = []
@@ -183,26 +185,21 @@ for i in range(MAX_EPISODES):
     s = env.reset()
     # 回合奖励
     ep_reward = 0
-    ep_delay = 0
+    ep_energy = 0
+    ep_time = 0
 
-    # 循环参数step
+    # 循环参数step：一个step代表一个时间帧
     j = 0
     while j < MAX_EP_STEPS:
-        # start = time.time()
-        # 一个step代表一个时间帧
-        # Add exploration noise
-        # ddpg获取的action,ddpg在learn时更新参数,传参为环境返回的reward等信息
-        # 连续动作。获取action。
+        start = time.time()
+        # ddpg获取的action,ddpg在learn时更新参数,传参为环境返回的reward等信息。动作为连续动作。
         a = ddpg.choose_action(s_normal.state_normal(s))
         # clip函数的使用，机械臂中防止超出范围
-        # todo：var变量的作用:类似于更新频率dt?
-        a = np.clip(np.random.normal(a, var), *a_bound)  # 高斯噪声add randomness to action selection for exploration
+        # todo：var变量的作用:类似于更新频率dt?动态变化。
+        a = np.clip(np.random.normal(a, var), *a_bound)  # 动作添加高斯噪声，目的是为了进行探索
         # 关键部分：环境的反馈（6个值，多了3个,均为布尔值,分别代表3个异常分支）
-        s_, r, is_terminal, step_redo, offloading_ratio_change, reset_dist = env.step(a,i)
-        # 根据后三个调整a[]参数：action
-        if step_redo:
-            # 重做此步，后续不执行
-            continue
+        s_, r, is_terminal, offloading_ratio_change, reset_dist, energy = env.step(a, i)
+        # 根据布尔指标调整a[]参数：action
         if reset_dist:
             a[2] = -1
         if offloading_ratio_change:
@@ -217,12 +214,15 @@ for i in range(MAX_EPISODES):
         s = s_
         # 累加获取到的reward和delay
         ep_reward += r
+        ep_energy += energy
         if j == MAX_EP_STEPS - 1 or is_terminal:
             # ep_reward是一回合结果
-            print('Episode:', i, ' Steps: %2d' % j, ' Reward: %7.2f' % ep_reward, ' Explore: %.3f' % var, ' Done:', is_terminal)
+            ep_time = time.time() - start
+            print('Episode:', i, ' Steps: %2d' % j, ' Reward: %7.2f' % ep_reward, ' Explore: %.3f' % var,
+                  ' Done:', is_terminal, ' ep_energy:', ep_energy, ' ep_time:', ep_time)
             ep_reward_list = np.append(ep_reward_list, ep_reward)
-            ep_time_list = np.append(ep_time_list, ep_delay)
-            # file_name = 'output_ddpg_' + str(self.bandwidth_nums) + 'MHz.txt'
+            ep_time_list = np.append(ep_time_list, ep_time)
+            ep_energy_list = np.append(ep_energy_list, ep_energy)
             # 输出文件
             file_name = 'output.txt'
             with open(file_name, 'a') as file_obj:
@@ -236,10 +236,19 @@ for i in range(MAX_EPISODES):
     #     eval_policy(ddpg, env)
 
 print('Running time: ', time.time() - t1)
+################# reward训练结果 ######################
 # plt.plot(ep_reward_list)
 # plt.xlabel("Episode")
 # plt.ylabel("Reward")
-plt.plot(ep_time_list)
+
+################# 耗时训练结果 ######################
+# plt.plot(ep_time_list)
+# plt.xlabel("Episode")
+# plt.ylabel("time")
+
+################# 耗能训练结果 ######################
+plt.plot(ep_energy_list)
 plt.xlabel("Episode")
-plt.ylabel("time")
+plt.ylabel("energy")
+
 plt.show()
