@@ -218,8 +218,10 @@ for i in range(MAX_EPISODES):
         if j == MAX_EP_STEPS - 1 or is_terminal:
             # ep_reward是一回合结果
             ep_time = time.time() - start
+            # if not is_terminal:
+            #     ep_energy = 35
             print('Episode:', i, ' Steps: %2d' % j, ' Reward: %7.2f' % ep_reward, ' Explore: %.3f' % var,
-                  ' Done:', is_terminal, ' ep_energy:', ep_energy, ' ep_time:', ep_time)
+                  ' Done:', is_terminal, ' ep_energy:', ep_energy)
             ep_reward_list = np.append(ep_reward_list, ep_reward)
             ep_time_list = np.append(ep_time_list, ep_time)
             ep_energy_list = np.append(ep_energy_list, ep_energy)
