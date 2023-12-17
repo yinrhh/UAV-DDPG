@@ -33,7 +33,7 @@ class UAVEnv(object):
 
     #################### UE参数 ####################
     M = 10  # UE数量
-    single_task_size = 1000000  # 任务初始大小
+    single_task_size = 10000000  # 任务初始大小
     p_off_loc = 10  # UE发送功率
     p_cal_loc = 10  # UE计算功率。设置为发送功率与计算功率相等。
     loc_ue_list = np.random.randint(0, 101, size=[M, 2])  # 随机生成终端设备位置

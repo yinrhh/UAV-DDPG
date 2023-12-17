@@ -9,7 +9,7 @@ class StateNormalization(object):
         M = env.M
         self.high_state = np.array([2000, env.ground_length, env.ground_width])
         # self.high_state = np.append(self.high_state, np.ones(M * 2) * env.ground_length)  # UE位置
-        self.high_state = np.append(self.high_state, np.ones(M) * 1000000)
+        self.high_state = np.append(self.high_state, np.ones(M) * env.single_task_size)
 
         self.low_state = np.zeros(M + 3)
 

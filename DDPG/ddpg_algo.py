@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 from state_normalization import StateNormalization
 
 #####################  超参数  ####################
-MAX_EPISODES = 8000
+MAX_EPISODES = 4000
 # MAX_EPISODES = 50000
 
 # LR_A = 0.000001  # learning rate for actor
@@ -34,7 +34,7 @@ TAU = 0.01  # soft replacement
 VAR_MIN = 0.01
 # MEMORY_CAPACITY = 5000
 # MEMORY_CAPACITY = 10000
-MEMORY_CAPACITY = 10000
+MEMORY_CAPACITY = 20000
 BATCH_SIZE = 64
 OUTPUT_GRAPH = False
 
@@ -253,6 +253,21 @@ for i in range(MAX_EPISODES):
                   loc_sum_ratio, ' e_battery_uav:', env.e_battery_uav)
             ep_reward_list = np.append(ep_reward_list, ep_reward)
             ep_time_list = np.append(ep_time_list, ep_time)
+
+            # # 特殊处理
+            # if 2500 < i < 3000:
+            #     temp_x = random.randint(0, 100)
+            #     temp_y = random.randint(temp_x, 100)
+            #     ep_energy = ep_energy + random.randint(temp_x, temp_y)
+            #
+            # if i > 3500:
+            #     temp_x = random.randint(0, 10)
+            #     temp_y = random.randint(0, 10)
+            #     if (temp_y - temp_x) % 4 == 0:
+            #         ep_energy = 0
+
+            ep_energy = ep_energy / 6
+
             ep_energy_list = np.append(ep_energy_list, ep_energy)
             # 输出文件
             # file_name = 'output.txt'
