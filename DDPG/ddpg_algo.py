@@ -18,22 +18,22 @@ import time
 import matplotlib.pyplot as plt
 from state_normalization import StateNormalization
 
-# 超参数
-#####################  hyper parameters  ####################
-MAX_EPISODES = 500
+#####################  超参数  ####################
+MAX_EPISODES = 8000
 # MAX_EPISODES = 50000
 
 # LR_A = 0.000001  # learning rate for actor
 # LR_C = 0.000002  # learning rate for critic
-# LR_A = 0.001  # learning rate for actor
-# LR_C = 0.002  # learning rate for critic
-LR_A = 0.1  # learning rate for actor
-LR_C = 0.2  # learning rate for critic
+LR_A = 0.001  # learning rate for actor
+LR_C = 0.002  # learning rate for critic
+# LR_A = 0.1  # learning rate for actor
+# LR_C = 0.2  # learning rate for critic
 GAMMA = 0.001  # optimal reward discount
 # GAMMA = 0.999  # reward discount
 TAU = 0.01  # soft replacement
 VAR_MIN = 0.01
 # MEMORY_CAPACITY = 5000
+# MEMORY_CAPACITY = 10000
 MEMORY_CAPACITY = 10000
 BATCH_SIZE = 64
 OUTPUT_GRAPH = False
@@ -168,6 +168,7 @@ a_bound = env.action_bound
 ddpg = DDPG(a_dim, s_dim, a_bound)
 
 var = 1  # control exploration
+# var = 0.5  # control exploration
 # var = 0.1  # control exploration
 # var = 0.01  # control exploration
 t1 = time.time()
@@ -187,6 +188,12 @@ for i in range(MAX_EPISODES):
     ep_reward = 0
     ep_energy = 0
     ep_time = 0
+    # off_sum_ratio = np.zeros(env.M)
+    # loc_sum_ratio = np.zeros(env.M)
+    off_sum_ratio = []
+    loc_sum_ratio = []
+    # off_sum_ratio = 0
+    # loc_sum_ratio = 0
 
     # 循环参数step：一个step代表一个时间帧
     j = 0
@@ -198,16 +205,22 @@ for i in range(MAX_EPISODES):
         # todo：var变量的作用:类似于更新频率dt?动态变化。
         a = np.clip(np.random.normal(a, var), *a_bound)  # 动作添加高斯噪声，目的是为了进行探索
         # 关键部分：环境的反馈（6个值，多了3个,均为布尔值,分别代表3个异常分支）
-        s_, r, is_terminal, offloading_ratio_change, reset_dist, energy = env.step(a, i)
+        s_, r, is_terminal, offloading_ratio_change, reset_dist, energy, off_ratio, loc_ratio = env.step(a, i)
         # 根据布尔指标调整a[]参数：action
         if reset_dist:
             a[2] = -1
         if offloading_ratio_change:
             a[3] = -1
+        # if not is_terminal and j == MAX_EP_STEPS - 1:
+        #     r = 0
+        #     for index in range(env.M):
+        #         r += -env.remain_task_list[index] / (env.f_ue / env.s)
         # 依然只存储4个值。前一个状态，执行动作a，变为下一个状态，获取的回报为r
         ddpg.store_transition(s_normal.state_normal(s), a, r, s_normal.state_normal(s_))  # 训练奖励缩小10倍
+        # ddpg.store_transition(s, a, r, s_)  # 训练奖励缩小10倍
 
-        # 超出容量进行学习，这一部分可以定义一个标志位memory_full进行判断
+        # 超出容量进行学习，这一部分可以定义一个标志位memory_full进行判断。
+        # step过短可能导致记忆库中的数据没有进行学习。因此需要扩大训练次数。
         if ddpg.pointer > MEMORY_CAPACITY:
             var = max([var * 0.9997, VAR_MIN])  # decay the action randomness
             ddpg.learn()
@@ -215,20 +228,36 @@ for i in range(MAX_EPISODES):
         # 累加获取到的reward和delay
         ep_reward += r
         ep_energy += energy
+        loc_sum_ratio_value = 0
+        off_sum_ratio_value = 0
+        for k in range(env.M):
+            loc_sum_ratio_value += loc_ratio[k]
+            off_sum_ratio_value += off_ratio[k]
+            # loc_sum_ratio += loc_ratio[k]
+            # off_sum_ratio += off_ratio[k]
+            # loc_sum_ratio[k] += loc_ratio[k]
+            # off_sum_ratio[k] += off_ratio[k]
+        loc_sum_ratio = np.append(loc_sum_ratio, loc_sum_ratio_value / env.M)
+        off_sum_ratio = np.append(off_sum_ratio, off_sum_ratio_value / env.M)
         if j == MAX_EP_STEPS - 1 or is_terminal:
             # ep_reward是一回合结果
             ep_time = time.time() - start
-            # if not is_terminal:
-            #     ep_energy = 35
-            print('Episode:', i, ' Steps: %2d' % j, ' Reward: %7.2f' % ep_reward, ' Explore: %.3f' % var,
-                  ' Done:', is_terminal, ' ep_energy:', ep_energy)
+            if not is_terminal:
+                ep_energy = 0
+            # loc_sum_ratio = loc_sum_ratio / env.M
+            # off_sum_ratio = off_sum_ratio / env.M
+            # print('Episode:', i, ' Steps: %2d' % j, ' Reward: %7.2f' % ep_reward, ' Explore: %.3f' % var,' Done:',
+            #       is_terminal, ' ep_energy:', ep_energy)
+            print('Episode:', i, ' Steps: %2d' % j, ' Reward: %7.2f' % ep_reward, ' Explore: %.3f' % var, ' Done:',
+                  is_terminal, ' ep_energy:', ep_energy, ' off_sum_ratio:', off_sum_ratio, ' loc_sum_ratio:',
+                  loc_sum_ratio, ' e_battery_uav:', env.e_battery_uav)
             ep_reward_list = np.append(ep_reward_list, ep_reward)
             ep_time_list = np.append(ep_time_list, ep_time)
             ep_energy_list = np.append(ep_energy_list, ep_energy)
             # 输出文件
-            file_name = 'output.txt'
-            with open(file_name, 'a') as file_obj:
-                file_obj.write("\n======== This episode is done ========")  # 本episode结束
+            # file_name = 'output.txt'
+            # with open(file_name, 'a') as file_obj:
+            #     file_obj.write("\n======== This episode is done ========")  # 本episode结束
             break
         # 用于step循环
         j = j + 1
@@ -250,7 +279,8 @@ print('Running time: ', time.time() - t1)
 
 ################# 耗能训练结果 ######################
 plt.plot(ep_energy_list)
-plt.xlabel("Episode")
-plt.ylabel("energy")
+plt.xlabel("Training times")
+plt.ylabel("Energy consumption[J]")
 
+plt.rcParams['font.sans-serif'] = ['SimHei']  # 黑体
 plt.show()

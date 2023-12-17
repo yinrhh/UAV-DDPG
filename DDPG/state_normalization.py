@@ -7,11 +7,11 @@ class StateNormalization(object):
         env = UAVEnv()
         # 规定状态的上限和下限：无人机电池, 位置, 剩余计算任务
         M = env.M
-        self.high_state = np.array([5e5, env.ground_length, env.ground_width])
-        self.high_state = np.append(self.high_state, np.ones(M * 2) * env.ground_length)
-        self.high_state = np.append(self.high_state, np.ones(M) * 3145729)
+        self.high_state = np.array([2000, env.ground_length, env.ground_width])
+        # self.high_state = np.append(self.high_state, np.ones(M * 2) * env.ground_length)  # UE位置
+        self.high_state = np.append(self.high_state, np.ones(M) * 1000000)
 
-        self.low_state = np.zeros(3 * M + 3)
+        self.low_state = np.zeros(M + 3)
 
     def state_normal(self, state):
         # 归一化处理

@@ -222,5 +222,5 @@ if __name__ == '__main__':
     plt.plot(ep_reward_list)
     plt.xlabel("Episode")
     plt.ylabel("Reward")
-    # plt.savefig("dqn.png")
-    # plt.show()
+    plt.savefig("dqn.png")
+    plt.show()

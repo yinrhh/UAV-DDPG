@@ -8,7 +8,8 @@ class UAVEnv(object):
     T = 400  # 周期400s
     slot_num = 40  # 40个间隔
     slot_time = 10  # 时间帧时长
-    tao_time = 2.5  # 时隙时长
+
+    # 奖惩根据无人机电量生成
     step_punish = -10  # 跳过step惩罚
     step_reward = 10  # 跳过step奖励
 
@@ -19,35 +20,39 @@ class UAVEnv(object):
 
     #################### 计算模型 ####################
     f_ue = 2e8  # UE的计算频率0.2GHz
-    f_uav = 8e8  # UAV的计算频率0.3GHz
+    f_uav = 3e9  # UAV的计算频率0.8GHz。设置为UE计算能力的15倍。
     s = 1000  # 单位bit处理所需cpu圈数1000
     alpha0 = 1e-5  # 距离为1m时的参考信道增益-30dB = 0.001， -50dB = 1e-5
 
     #################### UAV参数 ####################
-    flight_speed = 50.  # 飞行速度50m/s
-    e_battery_uav = 500000  # UAV电池电量: 500kJ.
+    flight_speed = 10.  # 飞行速度10m/s
+    e_battery_uav = 2000  # UAV电池电量: 2000J.
     p_fly_uav = 10  # UAV飞行功率
     p_cal_uav = 40  # UAV计算功率
     loc_uav = [50, 50]  # UAV初始位置
 
     #################### UE参数 ####################
-    M = 4  # UE数量
-    p_off_loc = 20  # UE发送功率
-    p_cal_loc = 4  # UE计算功率
+    M = 10  # UE数量
+    single_task_size = 1000000  # 任务初始大小
+    p_off_loc = 10  # UE发送功率
+    p_cal_loc = 10  # UE计算功率。设置为发送功率与计算功率相等。
     loc_ue_list = np.random.randint(0, 101, size=[M, 2])  # 随机生成终端设备位置
-    task_list = np.random.randint(20000000, 20000001, M)  # 随机生成终端任务大小：20MB
+    task_list = np.random.randint(single_task_size, single_task_size + 1, M)  # 随机生成终端任务大小：20MB
     remain_task_list = task_list.copy()
     # todo：随机生成任务时延限制
+
+    tao_time = 1.0 * slot_time / M  # 时隙时长
+    # s_normal = StateNormalization()
 
     # 环境最重要的3个参数
     action_bound = [-1, 1]  # 对应tanh激活函数
     action_dim = 2 + M * 2  # 前两位表示飞行角度和距离；后2M位分别表示UE的任务卸载比例和本地计算比例
-    state_dim = 3 + M * 3  # 无人机电池, 位置, 剩余计算任务, 通信中断, 数据发送速率
+    state_dim = 3 + M  # 无人机电池, 位置, 剩余计算任务, 通信中断, 数据发送速率
 
     def __init__(self):
         # 状态初始化：无人机电池, 位置, 剩余计算任务, 通信中断, 数据发送速率
         self.start_state = np.append(self.e_battery_uav, self.loc_uav)
-        self.start_state = np.append(self.start_state, np.ravel(self.loc_ue_list))
+        # self.start_state = np.append(self.start_state, np.ravel(self.loc_ue_list))
         self.start_state = np.append(self.start_state, self.task_list)
         # todo：通信中断、数据发送速率
         # 状态设置为初始状态
@@ -56,16 +61,16 @@ class UAVEnv(object):
     def reset(self):
         # 每个episode调用一次
         # 重置环境参数
-        self.e_battery_uav = 500000  # uav电池电量: 500kJ
+        self.e_battery_uav = 2000  # uav电池电量: 500kJ
         self.loc_uav = [50, 50]
-        self.loc_ue_list = np.random.randint(0, 101, size=[self.M, 2])  # 位置信息:x在0-100随机
-        self.task_list = np.random.randint(2000000, 2000001, self.M)  # 随机计算任务2MB
+        # self.loc_ue_list = np.random.randint(0, 101, size=[self.M, 2])  # 位置信息:x在0-100随机
+        self.task_list = np.random.randint(self.single_task_size, self.single_task_size + 1, self.M)  # 随机计算任务2MB
         # todo：通信中断、数据发送速率
         # todo：考虑遮挡情况
 
-        # 重置状态空间：无人机电池, 位置, 剩余计算任务, 通信中断, 数据发送速率
+        # 重置状态空间：无人机电池, 位置, 终端设备UE位置,剩余计算任务, 通信中断, 数据发送速率
         self.state = np.append(self.e_battery_uav, self.loc_uav)
-        self.state = np.append(self.state, np.ravel(self.loc_ue_list))
+        # self.state = np.append(self.state, np.ravel(self.loc_ue_list))
         self.state = np.append(self.state, self.task_list)
         # todo：通信中断、数据发送速率
         # 重置状态并返回
@@ -75,7 +80,7 @@ class UAVEnv(object):
     def _get_obs(self):
         # 返回当前系统状态：无人机电池, 位置, 剩余计算任务, 通信中断, 数据发送速率
         self.state = np.append(self.e_battery_uav, self.loc_uav)
-        self.state = np.append(self.state, np.ravel(self.loc_ue_list))
+        # self.state = np.append(self.state, np.ravel(self.loc_ue_list))
         self.state = np.append(self.state, self.task_list)
         # todo：通信中断、数据发送速率
         return self.state
@@ -87,15 +92,19 @@ class UAVEnv(object):
         offloading_ratio_change = False
         reset_dist = False
         reward = 0
+        cur_task_list = self.task_list.copy()
 
         action = (action + 1) / 2  # 将取值区间位-1~1的action -> 0~1的action。避免原来action_bound为[0,1]时训练actor网络tanh函数一直取边界0
+        off_ratio = action[2:self.M + 2].copy()
+        loc_ratio = action[self.M + 2:].copy()
 
         theta = action[0] * np.pi * 2  # 角度
         speed = action[1] * self.flight_speed  # 飞行速度
 
         ################# UAV各项参数 ######################
-        dis_fly = speed * self.slot_time
+        dis_fly = speed * 1
         e_fly = self.p_fly_uav * self.slot_time  # 飞行能耗
+        e_fly = 0  # todo：暂时设置为0，能量归一化时较为复杂
 
         # UAV飞行后的位置
         dx_uav = dis_fly * math.cos(theta)
@@ -109,29 +118,59 @@ class UAVEnv(object):
         off_task_size = np.zeros(self.M)  # UE卸载的任务量
         local_task_size = np.zeros(self.M)  # UE本地计算的任务量
         e_uav_total = 0  # UAV计算耗能（一个时间帧）
+
+        ################# 惩罚标志位 ######################
+        loc_cal_flag = 0
+        loc_off_flag = 0
+
         # 卸载比例转换为真正处理的任务大小。
         for i in range(self.M):
-            local_task_size[i] = (self.remain_task_list[i] * local_task_size_ratio[i]) if (self.task_list[i] > 0) else 0
-            off_task_size[i] = (self.remain_task_list[i] * off_task_size_ratio[i]) if (self.task_list[i] > 0) else 0
+            if self.task_list[i] > 0:
+                if self.task_list[i] <= (
+                        self.remain_task_list[i] * (local_task_size_ratio[i] + off_task_size_ratio[i])):
+                    local_temp_ratio = local_task_size_ratio[i]
+                    off_temp_ratio = off_task_size_ratio[i]
+                    local_task_size[i] = self.task_list[i] * local_temp_ratio / (local_temp_ratio + off_temp_ratio)
+                    off_task_size[i] = self.task_list[i] * off_temp_ratio / (local_temp_ratio + off_temp_ratio)
+                    loc_ratio[i] = local_task_size[i] / self.remain_task_list[i]  # 占初始任务大小的比例
+                    off_ratio[i] = off_task_size[i] / self.remain_task_list[i]  # 占初始任务大小的比例
+                else:
+                    local_task_size[i] = self.remain_task_list[i] * local_task_size_ratio[i]
+                    off_task_size[i] = self.remain_task_list[i] * off_task_size_ratio[i]
+            else:
+                local_task_size[i] = 0
+                loc_ratio[i] = 0
+                off_task_size[i] = 0
+                off_ratio[i] = 0
 
             t_uav_cal = off_task_size[i] / (self.f_uav / self.s)  # 在UAV边缘服务器上计算时延
-            e_uav = self.p_cal_uav * t_uav_cal  # 在UAV边缘服务器上计算耗能
-            e_uav_total = e_uav_total + e_uav
 
             # 本地计算任务分配量过多，一个时间帧内无法计算完成。加以惩罚并把任务量置0。
             # todo：任务中断概率
             t_loc_cal = self.com_local_single_time(local_task_size[i])
             t_local_off = self.com_uav_single_time(np.array([uav_after_x, uav_after_y]), self.loc_ue_list[i],
                                                    off_task_size[i])
+            t_local_off = 0  # todo：暂时忽略卸载时间
             # 时延约束
-            if t_loc_cal > self.tao_time:
-                local_task_size[i] = 0
-                reward += self.step_punish * local_task_size_ratio[i]  # 按照卸载比例进行惩罚
-            if t_local_off + t_uav_cal > self.tao_time:
-                off_task_size[i] = 0
-                reward += self.step_punish * off_task_size_ratio[i]  # 按照卸载比例进行惩罚
-            else:
-                reward += self.step_reward
+            if t_loc_cal > self.slot_time or t_local_off + t_uav_cal > self.tao_time:
+                if t_loc_cal > self.slot_time:
+                    loc_ratio[i] = 0
+                    local_task_size[i] = 0
+                    # reward += -self.p_cal_loc * t_loc_cal
+                    loc_cal_flag += 1
+                    # reward += self.step_punish * local_task_size_ratio[i]  # 按照卸载比例进行惩罚
+                if t_local_off + t_uav_cal > self.tao_time:
+                    off_ratio[i] = 0
+                    off_task_size[i] = 0
+                    # reward += -self.p_off_loc * t_local_off
+                    loc_off_flag += 1
+                    # reward += self.step_punish * off_task_size_ratio[i]  # 按照卸载比例进行惩罚
+            # else:
+            #     reward += self.step_reward
+
+            t_uav_cal = off_task_size[i] / (self.f_uav / self.s)  # 在UAV边缘服务器上计算时延
+            e_uav = self.p_cal_uav * t_uav_cal  # 在UAV边缘服务器上计算耗能
+            e_uav_total = e_uav_total + e_uav
 
         ################# UAV各项参数 ######################
         t_loc_off, t_loc_cal = self.com_time(np.array([uav_after_x, uav_after_y]), off_task_size, local_task_size)
@@ -140,7 +179,8 @@ class UAVEnv(object):
             is_terminal = True
             # 区分 energy 和 reward.energy需要对reward产生较大影响
             energy = 0
-            reward += 1000
+            # reward = 0
+            # reward += 1000
         # elif self.time_limited(t_loc_off, t_loc_cal):
         #     # step_redo = True
         #     reward = self.step_punish
@@ -151,49 +191,67 @@ class UAVEnv(object):
             # UAV飞行范围约束：如果超出边界，则飞行距离dist置零。不需要重做此步,UAV选择变化之前的位置。不改变UAV位置。
             reset_dist = True
             energy = self.com_energy(t_loc_off, t_loc_cal)  # 计算energy
-            reward += -energy
+            # reward += -energy
             self.e_battery_uav = self.e_battery_uav - e_uav_total  # UAV剩余电量
             self.record_step(energy, self.loc_uav[0], self.loc_uav[1], off_task_size, local_task_size, t_loc_off,
-                             t_loc_cal, off_task_size_ratio, local_task_size_ratio, eps, self.e_battery_uav)
+                             t_loc_cal, off_task_size_ratio, local_task_size_ratio, eps, self.e_battery_uav, action,
+                             cur_task_list)
         elif self.e_battery_uav < e_fly or self.e_battery_uav - e_fly < e_uav_total:
             # UAV电量约束：UAV电量不能支持计算,属于UAV电量约束条件。此时任务全部在本地计算。
+            self.e_battery_uav = 0
+            for i in range(self.M):
+                t_loc_off[i] = 0
+                off_ratio[i] = 0
             energy = self.com_energy(t_loc_off, t_loc_cal)  # 计算energy
-            reward += -energy
+            # reward += -energy
             offloading_ratio_change = True
             self.record_step(energy, uav_after_x, uav_after_y, off_task_size, local_task_size, t_loc_off,
-                             t_loc_cal, off_task_size_ratio, local_task_size_ratio, eps, self.e_battery_uav)
+                             t_loc_cal, off_task_size_ratio, local_task_size_ratio, eps, self.e_battery_uav, action,
+                             cur_task_list)
         else:  # 电量支持飞行,且计算任务合理,且计算任务能在剩余电量内计算
             energy = self.com_energy(t_loc_off, t_loc_cal)  # 计算energy
-            reward += -energy
+            # reward += -energy
             self.e_battery_uav = self.e_battery_uav - e_fly - e_uav_total  # UAV剩余电量
             self.loc_uav[0] = uav_after_x  # UAV飞行后的位置x
             self.loc_uav[1] = uav_after_y  # UAV飞行后的位置y
             self.record_step(energy, uav_after_x, uav_after_y, off_task_size, local_task_size, t_loc_off,
-                             t_loc_cal, off_task_size_ratio, local_task_size_ratio, eps, self.e_battery_uav)
+                             t_loc_cal, off_task_size_ratio, local_task_size_ratio, eps, self.e_battery_uav, action,
+                             cur_task_list)
 
         # 环境根据执行的动作输出奖励和状态。delay和reward互为相反数。
         # todo：返回时延信息
-        return self._get_obs(), reward, is_terminal, offloading_ratio_change, reset_dist, energy
+        normal_energy = self.energy_normal(
+            self.p_cal_loc * self.slot_time * loc_cal_flag + self.p_off_loc * self.tao_time * loc_off_flag + energy)
+        sum_task_size = local_task_size + off_task_size
+        normal_diff_task_list = self.task_normal(sum_task_size)
+        normal_state = 0
+        for i in range(self.M):
+            normal_state += 1 - normal_diff_task_list[i]
+        normal_state = normal_state / self.M
+        reward = -(normal_energy + normal_state) * 10
+
+        return self._get_obs(), reward, is_terminal, offloading_ratio_change, reset_dist, energy, off_ratio, loc_ratio
 
     def record_step(self, energy, x, y, uav_task_size, local_task_size, t_loc_off, t_loc_cal,
-                    off_task_size_ratio, local_task_size_ratio, eps, e_battery_uav):
+                    off_task_size_ratio, local_task_size_ratio, eps, e_battery_uav, action, cur_task_list):
         for i in range(self.M):
             size = self.task_list[i] - uav_task_size[i] - local_task_size[i]
             self.task_list[i] = size if size > 0 else 0
-        # 记录UE花费,输出至文件保存
-        file_name = 'output.txt'
-        with open(file_name, 'a') as file_obj:
-            file_obj.write("\n============================== " + '{}'.format(eps) + " ==============================")
-            file_obj.write("\nremain_task: " + '{}'.format(self.task_list))
-            file_obj.write("\ntask_size_ratio: " + '{}'.format(off_task_size_ratio))
-            file_obj.write("\nlocal_task_size_ratio: " + '{}'.format(local_task_size_ratio))
-            file_obj.write("\nuav_task_size: " + '{}'.format(uav_task_size))
-            file_obj.write("\nt_loc_off: " + '{}'.format(t_loc_off))
-            file_obj.write("\nlocal_task_size:" + '{}'.format(local_task_size))
-            file_obj.write("\nt_loc_cal: " + '{}'.format(t_loc_cal))
-            file_obj.write("\nenergy:" + '{:.2f}'.format(energy))
-            file_obj.write("\ne_battery_uav:" + '{:.2f}'.format(e_battery_uav))
-            file_obj.write("\nUAV hover loc:" + "[" + '{:.2f}'.format(x) + ', ' + '{:.2f}'.format(y) + ']')  # 输出保留两位结果
+        # # 记录UE花费,输出至文件保存
+        # file_name = 'output.txt'
+        # with open(file_name, 'a') as file_obj:
+        #     file_obj.write("\n============================== " + '{}'.format(eps) + " ==============================")
+        #     # file_obj.write("\naction: " + '{}'.format(action))
+        #     file_obj.write("\ncur_task_list: " + '{}'.format(cur_task_list))
+        #     file_obj.write("\noff_task_size_ratio: " + '{}'.format(off_task_size_ratio))
+        #     file_obj.write("\nlocal_task_size_ratio: " + '{}'.format(local_task_size_ratio))
+        #     # file_obj.write("\nuav_task_size: " + '{}'.format(uav_task_size))
+        #     # file_obj.write("\nt_loc_off: " + '{}'.format(t_loc_off))
+        #     # file_obj.write("\nlocal_task_size:" + '{}'.format(local_task_size))
+        #     # file_obj.write("\nt_loc_cal: " + '{}'.format(t_loc_cal))
+        #     file_obj.write("\nenergy:" + '{:.2f}'.format(energy))
+        #     file_obj.write("\ne_battery_uav:" + '{:.2f}'.format(e_battery_uav))
+        #     file_obj.write("\nUAV hover loc:" + "[" + '{:.2f}'.format(x) + ', ' + '{:.2f}'.format(y) + ']')  # 输出保留两位结果
 
     def com_time(self, loc_uav, uav_task_size, local_task_size):
         loc_ue_list = self.loc_ue_list
@@ -247,3 +305,14 @@ class UAVEnv(object):
             if (t_loc_off[i] > self.tao_time) or (t_loc_cal[i] > self.tao_time):
                 return True
         return False
+
+    def energy_normal(self, energy):
+        high_energy = (self.p_off_loc * self.tao_time + self.p_cal_loc * self.slot_time) * self.M
+        low_energy = 0
+        return energy / (high_energy - low_energy)
+
+    def task_normal(self, state):
+        high_state = np.ones(self.M) * self.single_task_size
+        low_state = np.zeros(self.M)
+        # 归一化处理
+        return state / (high_state - low_state)
